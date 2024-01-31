@@ -1,32 +1,9 @@
-"""
-A module for log utilities. 
-
-It provides consistent log level and format, and always write to
-*logger_name.log* file.
-The project should use this instead of standard `logging` module.
-
-Differences with `logging.getLogger`:
-
-1. Multiple level logger is not supported. 
-2. Exception backtracing stack is fixed.
-
-According to
-https://stackoverflow.com/questions/47968861/does-python-logging-support-multiprocessing,
-logging within pipe_size, which is usually 4096 btyes, is atomic. 
-It is big enough for most of the situation, except for backtracing.
-Have to restrict backtrace level.
-"""
-
 import os
 import json
 import logging
 from typing import Callable, Any, cast, ParamSpec, Concatenate, TypeVar
 
-from django.conf import settings
-
-from boot.config import absolute_path
 from ..http.dependency import HttpRequest
-from ..log.config import log_config as CONFIG
 from ..inspect import module_filepath
 from ..wrap import return_on_except, Listener, ExceptType
 
@@ -45,6 +22,22 @@ ViewFunction = Callable[Concatenate[R, P], T]
 
 
 class Logger(logging.Logger):
+    '''日志记录器
+
+    捕获错误信息的日志，提供了错误工具和视图包装器
+    相比于默认Logger，提供了便于设置统一的日志级别和格式的接口
+    获取的实例会被缓存，不会重复创建
+
+    Warning:
+        请不要直接使用Logger，应使用getLogger获取实例
+        如果指定getLogger不初始化，使用前需要调用setup或setupConfig
+
+    Note:
+        在 pipe_size 内的日志记录（通常为 4096 字节）是原子的。
+        这对于除回溯以外的大多数情况已经足够，如需保证原子性请限制回溯的深度。
+        (https://stackoverflow.com/questions/47968861/does-python-logging-support-multiprocessing)
+    '''
+
     @classmethod
     def getLogger(cls, name: str, setup: bool = True):
         if name in _loggers:
@@ -59,25 +52,25 @@ class Logger(logging.Logger):
         return logger
 
     def setup(self, name: str, handle: bool = True) -> None:
-        self.set_debug_mode(settings.DEBUG)
-        self.setLevel()
+        self.setupConfig()
         if handle: self.add_default_handler(name)
 
-    def setLevel(self, level: int | str | None = None) -> None:
-        super().setLevel(CONFIG.level if level is None else level)
+    def setupConfig(self) -> None:
+        from django.conf import settings
+        self.debug_mode = settings.DEBUG
+        self.format = '{asctime} [{levelname}] {message}'
+        self.format_style = '{'
+        self.stack_level = 8
+        self.setLevel(logging.INFO)
 
-    def add_default_handler(self, name: str, *paths: str, format: str = '') -> None:
-        base_dir = absolute_path(CONFIG.log_dir)
-        for path in paths:
-            base_dir = os.path.join(base_dir, path)
+    def add_default_handler(self, name: str, *paths: str, format: str = None) -> None:
+        base_dir = os.path.join(*paths)
         os.makedirs(base_dir, exist_ok=True)
         file_path = os.path.join(base_dir, name + '.log')
         handler = logging.FileHandler(file_path, encoding='UTF8', mode='a')
-        handler.setFormatter(logging.Formatter(format or CONFIG.format, style='{'))
+        formatter = logging.Formatter(format or self.format, style=self.format_style)
+        handler.setFormatter(formatter)
         self.addHandler(handler)
-
-    def set_debug_mode(self, debug: bool) -> None:
-        self.debug_mode = debug
 
     def findCaller(self, stack_info: bool = False, stacklevel: int = 1):
         filepath, lineno, funcname, sinfo = super().findCaller(stack_info, stacklevel + 1)
@@ -95,7 +88,7 @@ class Logger(logging.Logger):
     def _log(self, level, msg, args, exc_info = None, extra = None,
              stack_info = False, stacklevel = 1) -> None:
         if stack_info:
-            stacklevel += CONFIG.stack_level
+            stacklevel += self.stack_level
         stacklevel += 1
         return super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
 

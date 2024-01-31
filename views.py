@@ -6,7 +6,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.template.response import TemplateResponse
 
 from .http import HttpRequest
-from .log.forward import Logger
+from .log.logger import Logger
 
 
 __all__ = [
@@ -238,7 +238,7 @@ class SecureView(View):
         raise ImproperlyConfigured(
             f'SecureView requires an implementation of `{method}`')
 
-    def get_logger(self) -> 'Logger | None':
+    def get_logger(self) -> Logger | None:
         '''获取日志记录器'''
         return None
 
