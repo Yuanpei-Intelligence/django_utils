@@ -6,14 +6,11 @@ from django.core.exceptions import ImproperlyConfigured
 from django.template.response import TemplateResponse
 
 from .http import HttpRequest
-from .global_messages import wrong, MESSAGECONTEXT, MSG_FIELD, CODE_FIELD
 from .log.forward import Logger
 
 
 __all__ = [
     'SecureView',
-    'SecureJsonView',
-    'SecureTemplateView',
 ]
 
 
@@ -256,85 +253,3 @@ class SecureView(View):
         '''重定向，由于类的重定向对象无需提前确定，使用redirect动态加载即可'''
         from django.shortcuts import redirect
         return self.response_created(redirect(to, *args, permanent=permanent, **kwargs))
-
-
-class SecureTemplateView(SecureView):
-    """
-    通用的模板视图类：在SecureView的基础上增加了模板渲染功能
-
-    模板渲染：
-    - template_name对应模板的文件名，继承类必须设置这个属性
-    - get_context_data()用于获取模板所需的context
-    - extra_context作为get_context_data()的补充，在处理请求的过程中可以随时向其中添加内容
-    """
-    template_name: str
-    extra_context: dict[str, Any]
-    response_class = TemplateResponse
-
-    def setup(self, request: HttpRequest, *args: Any, **kwargs: Any) -> None:
-        super().setup(request, *args, **kwargs)
-        self.extra_context = {}
-
-    def permission_denied(self, user_info: str | None = None) -> NoReturn:
-        user_message = f'当前用户无权访问该页面'
-        if user_info is not None:
-            user_message += f'：{user_info}'
-        return self.response_created(self.wrong(user_message))
-
-    def get_template_names(self):
-        if getattr(self, 'template_name', None) is None:
-            raise ImproperlyConfigured(
-                "SecureTemplateView requires either a definition of "
-                "'template_name' or an implementation of 'get_template_names()'"
-            )
-        return [self.template_name]
-
-    def get_context_data(self, **kwargs) -> dict[str, Any]:
-        return self.extra_context | kwargs
-
-    def render(self, **kwargs: Any):
-        response = self.response_class(
-            request=self.request,
-            template=self.get_template_names(),
-            context=self.get_context_data(**kwargs),
-        )
-        # 实时加载模板，便于捕获模板错误
-        response.render()
-        return self.response_created(response)
-
-    def wrong(self, message: str):
-        wrong(message, self.extra_context)
-        return self.render()
-
-    def get_logger(self) -> 'Logger | None':
-        from record.log.utils import get_logger
-        return get_logger('error')
-
-
-class SecureJsonView(SecureView):
-    response_class: type[JsonResponse] = JsonResponse
-    data: dict[str, Any]
-    http_method_names = ['post']
-    method_names = http_method_names
-
-    ExtraDataType = dict[str, Any] | None
-
-    def setup(self, request: HttpRequest, *args: Any, **kwargs: Any) -> None:
-        '''初始化请求参数和返回数据'''
-        self.data = {}
-        return super().setup(request, *args, **kwargs)
-
-    def json_response(self, extra_data: ExtraDataType = None, **kwargs: Any) -> JsonResponse:
-        data = self.data
-        if extra_data is not None:
-            data |= extra_data
-        return self.response_class(data, **kwargs)
-
-    def message_response(self, message: MESSAGECONTEXT):
-        self.data[MSG_FIELD] = message[MSG_FIELD]
-        self.data[CODE_FIELD] = message[CODE_FIELD]
-        return self.json_response()
-
-    def get_logger(self) -> 'Logger | None':
-        from record.log.utils import get_logger
-        return get_logger('APIerror')
