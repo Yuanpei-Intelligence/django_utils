@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth import get_permission_codename
 from django.contrib.admin import ModelAdmin, SimpleListFilter
 
-from .http import HttpRequest
+from ..http import HttpRequest
 
 __all__ = [
     'as_display', 'as_action',
