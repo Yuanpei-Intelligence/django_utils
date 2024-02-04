@@ -31,6 +31,7 @@ class Logger(logging.Logger):
     Warning:
         请不要直接使用Logger，应使用getLogger获取实例
         如果指定getLogger不初始化，使用前需要调用setup或setupConfig
+        默认创建文件日志，由于任意路径存在风险，子类在路径中必须添加根目录，否则会抛出异常
 
     Note:
         在 pipe_size 内的日志记录（通常为 4096 字节）是原子的。
